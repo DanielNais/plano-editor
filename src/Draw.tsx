@@ -1,105 +1,102 @@
 import { useState } from "react";
-import type { Shape, Tool } from "./draw/types";
-import { v4 as uuidv4 } from "uuid";
+import { Stage, Layer, Rect, Circle } from "react-konva";
+import type { Tool } from "./draw/types";
+import { useDrawing } from "./draw/hooks/useDrawing";
+import "./styles/draw.css";
 
-export function useDrawing(
-  tool: Tool,
-  CANVAS_X: number,
-  CANVAS_Y: number,
-  CANVAS_WIDTH: number,
-  CANVAS_HEIGHT: number
-) {
-  const [shapes, setShapes] = useState<Shape[]>([]);
-  const [history, setHistory] = useState<Shape[][]>([]);
-  const [isDrawing, setIsDrawing] = useState(false);
+const CANVAS_WIDTH = 800;
+const CANVAS_HEIGHT = 600;
+const CANVAS_X = 0;
+const CANVAS_Y = 0;
 
-  const handleMouseDown = (pointer: { x: number; y: number }) => {
-    if (
-      pointer.x < CANVAS_X ||
-      pointer.x > CANVAS_X + CANVAS_WIDTH ||
-      pointer.y < CANVAS_Y ||
-      pointer.y > CANVAS_Y + CANVAS_HEIGHT
-    ) {
-      return;
-    }
+export default function Draw() {
+  const [tool, setTool] = useState<Tool>("rect");
 
-    setHistory([...history, shapes]);
+  const { shapes, handleMouseDown, handleMouseMove, handleMouseUp, undo } =
+    useDrawing(tool, CANVAS_X, CANVAS_Y, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    if (tool === "rect") {
-      setShapes([
-        ...shapes,
-        {
-          id: uuidv4(),
-          type: "rect",
-          x: pointer.x,
-          y: pointer.y,
-          width: 0,
-          height: 0,
-        },
-      ]);
-      setIsDrawing(true);
-    }
+  return (
+    <div className="draw-container">
+      <div className="toolbar">
+        <button
+          className={tool === "rect" ? "active" : ""}
+          onClick={() => setTool("rect")}
+        >
+          📦 Rectángulo
+        </button>
+        <button
+          className={tool === "circle" ? "active" : ""}
+          onClick={() => setTool("circle")}
+        >
+          ⭕ Círculo
+        </button>
+        <button onClick={undo}>↩️ Deshacer</button>
+      </div>
 
-    if (tool === "circle") {
-      setShapes([
-        ...shapes,
-        {
-          id: uuidv4(),
-          type: "circle",
-          x: pointer.x,
-          y: pointer.y,
-          radius: 0,
-        },
-      ]);
-      setIsDrawing(true);
-    }
-  };
+      <div className="canvas-wrapper">
+        <Stage
+          width={CANVAS_WIDTH}
+          height={CANVAS_HEIGHT}
+          onMouseDown={(e) => {
+            const stage = e.target.getStage();
+            const pointer = stage?.getPointerPosition();
+            if (pointer) handleMouseDown(pointer);
+          }}
+          onMouseMove={(e) => {
+            const stage = e.target.getStage();
+            const pointer = stage?.getPointerPosition();
+            if (pointer) handleMouseMove(pointer);
+          }}
+          onMouseUp={handleMouseUp}
+        >
+          <Layer>
+            {/* Fondo del canvas */}
+            <Rect
+              x={0}
+              y={0}
+              width={CANVAS_WIDTH}
+              height={CANVAS_HEIGHT}
+              fill="#fafafa"
+              stroke="#ddd"
+              strokeWidth={1}
+            />
 
-  const handleMouseMove = (pointer: { x: number; y: number }) => {
-    if (!isDrawing) return;
+            {/* Renderizar todas las formas */}
+            {shapes.map((shape) => {
+              if (shape.type === "rect") {
+                return (
+                  <Rect
+                    key={shape.id}
+                    x={shape.x}
+                    y={shape.y}
+                    width={shape.width}
+                    height={shape.height}
+                    stroke="#000000"
+                    strokeWidth={2}
+                    opacity={0.7}
+                  />
+                );
+              }
 
-    const updated = shapes.map((shape, index) => {
-      if (index !== shapes.length - 1) return shape;
+              if (shape.type === "circle") {
+                return (
+                  <Circle
+                    key={shape.id}
+                    x={shape.x}
+                    y={shape.y}
+                    radius={shape.radius}
+                    stroke="#000000"
+                    strokeWidth={2}
+                    opacity={0.7}
+                  />
+                );
+              }
 
-      if (shape.type === "rect") {
-        return {
-          ...shape,
-          width: pointer.x - shape.x,
-          height: pointer.y - shape.y,
-        };
-      }
-
-      if (shape.type === "circle") {
-        const dx = pointer.x - shape.x;
-        const dy = pointer.y - shape.y;
-        return {
-          ...shape,
-          radius: Math.sqrt(dx * dx + dy * dy),
-        };
-      }
-
-      return shape;
-    });
-
-    setShapes(updated);
-  };
-
-  const handleMouseUp = () => {
-    setIsDrawing(false);
-  };
-
-  const undo = () => {
-    if (history.length === 0) return;
-    const previous = history[history.length - 1];
-    setShapes(previous);
-    setHistory(history.slice(0, history.length - 1));
-  };
-
-  return {
-    shapes,
-    handleMouseDown,
-    handleMouseMove,
-    handleMouseUp,
-    undo,
-  };
+              return null;
+            })}
+          </Layer>
+        </Stage>
+      </div>
+    </div>
+  );
 }
