@@ -20,23 +20,26 @@ type Props = {
 };
 
 const SHAPES: { kind: ObjectKind; icon: string; label: string }[] = [
-  { kind: "rect",   icon: "▭",  label: "Rectángulo" },
-  { kind: "circle", icon: "○",  label: "Círculo"    },
-  { kind: "line",   icon: "╱",  label: "Línea"      },
-  { kind: "door",   icon: "🚪", label: "Puerta"     },
-  { kind: "window", icon: "🪟", label: "Ventana"    },
+  { kind: "rect",   icon: "□",  label: "Rectángulo" },
+  { kind: "circle", icon: "◯",  label: "Círculo"    },
+  { kind: "line",   icon: "—",  label: "Línea"      },
+  { kind: "door",   icon: "⌒",  label: "Puerta"     },
+  { kind: "window", icon: "⊟",  label: "Ventana"    },
 ];
 
-const phaseLabel: Record<Phase, string> = {
-  outline: "① Contorno",
-  objects: "② Formas",
-  labels:  "③ Texto",
+const PHASE_STEPS: { key: Phase; label: string; short: string }[] = [
+  { key: "outline", label: "Contorno",  short: "01" },
+  { key: "objects", label: "Elementos", short: "02" },
+  { key: "labels",  label: "Texto",     short: "03" },
+];
+
+const PHASE_HINTS: Record<Phase, string> = {
+  outline: "Clic en la cuadrícula para añadir vértices. Cierra la forma sobre el primer punto.",
+  objects: "Arrastra para mover. Esquina ↘ para redimensionar. Gira con el slider.",
+  labels:  "Añade etiquetas de texto y arrástralas a su posición.",
 };
-const phaseHint: Record<Phase, string> = {
-  outline: "Clic en la cuadrícula para añadir vértices. Cierra haciendo clic en el primer punto.",
-  objects: "Añade formas, arrástralas y usa la esquina ↘ para redimensionar. Aplica para fijar.",
-  labels:  "Añade etiquetas de texto y arrástralas al sitio.",
-};
+
+const ORDER: Record<Phase, number> = { outline: 0, objects: 1, labels: 2 };
 
 export default function LeftSidebar({
   phase, outlineClosed, outlinePointCount,
@@ -45,57 +48,88 @@ export default function LeftSidebar({
   onAddObject, onFixObject, onDeleteObject, onSetRotation,
   onAddLabel, onFixLabel, onDeleteLabel, onUpdateLabelText,
 }: Props) {
-  return (
-    <aside className="sidebar sidebar-left" style={{ width: 180 }}>
 
-      {/* Phase bar */}
-      <div style={{ paddingBottom: 10, borderBottom: "1px solid #eee", marginBottom: 8 }}>
-        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-          {(["outline", "objects", "labels"] as Phase[]).map(p => {
-            const order = { outline: 0, objects: 1, labels: 2 } as Record<Phase, number>;
-            return (
-              <div key={p} style={{
-                flex: 1, height: 4, borderRadius: 2,
-                background: phase === p ? "#1a1a1a" : order[phase] > order[p] ? "#aaa" : "#eee",
-              }} />
-            );
-          })}
+  const nextEnabled =
+    (phase === "outline" && outlineClosed) ||
+    phase === "objects" ||
+    phase === "labels";
+
+  return (
+    <aside className="sidebar" style={{ width: 220 }}>
+
+      {/* ── Logo / header ── */}
+      <div className="sidebar-header">
+        <div className="app-logo">
+          <div className="app-logo-mark">⌖</div>
+          <div>
+            <div className="app-logo-name">PlanEditor</div>
+            <div className="app-logo-tag">Floor Plan Tool</div>
+          </div>
         </div>
-        <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#222" }}>{phaseLabel[phase]}</p>
-        <p style={{ margin: "4px 0 0", fontSize: 10, color: "#888", lineHeight: 1.4 }}>{phaseHint[phase]}</p>
+
+        {/* Phase progress */}
+        <div className="phase-bar">
+          {PHASE_STEPS.map(s => (
+            <div key={s.key} className="phase-pip" style={{
+              background:
+                phase === s.key ? 'var(--accent)' :
+                ORDER[phase] > ORDER[s.key] ? 'var(--border2)' : 'var(--text-faint)',
+              opacity: phase === s.key ? 1 : ORDER[phase] > ORDER[s.key] ? 0.5 : 0.2,
+            }} />
+          ))}
+        </div>
+        <div className="phase-title">
+          {PHASE_STEPS.find(s => s.key === phase)?.short} &nbsp;{PHASE_STEPS.find(s => s.key === phase)?.label}
+        </div>
+        <div className="phase-hint">{PHASE_HINTS[phase]}</div>
       </div>
 
-      {/* ─── PHASE 1 ─────────────────────────────────── */}
-      {phase === "outline" && (
-        <>
-          <div className="sidebar-section">
-            <span className="section-label">Acciones</span>
-            <button className="action-btn" onClick={onUndo} disabled={outlinePointCount === 0}>↩ Deshacer punto</button>
-            <button className="action-btn danger" onClick={onReset} disabled={outlinePointCount === 0}>🗑 Reiniciar</button>
-          </div>
-          <div style={{ marginTop: "auto", borderTop: "1px solid #eee", paddingTop: 10 }}>
-            <button
-              className="action-btn"
-              style={{ background: outlineClosed ? "#1a1a1a" : "#ccc", color: "#fff", border: "none", fontWeight: 600, cursor: outlineClosed ? "pointer" : "not-allowed" }}
-              onClick={() => outlineClosed && onNextPhase()}
-            >
-              Siguiente →
-            </button>
-            {!outlineClosed && outlinePointCount >= 3 && (
-              <p style={{ fontSize: 10, color: "#aaa", margin: "6px 0 0", textAlign: "center" }}>Clic en el primer punto para cerrar</p>
-            )}
-            {!outlineClosed && outlinePointCount > 0 && outlinePointCount < 3 && (
-              <p style={{ fontSize: 10, color: "#aaa", margin: "6px 0 0", textAlign: "center" }}>Mínimo 3 puntos</p>
-            )}
-          </div>
-        </>
-      )}
+      {/* ── Body ── */}
+      <div className="sidebar-body">
 
-      {/* ─── PHASE 2 ─────────────────────────────────── */}
-      {phase === "objects" && (
-        <>
-          <div className="sidebar-section">
-            <span className="section-label">Añadir forma</span>
+        {/* ─── PHASE 1 ─── */}
+        {phase === "outline" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span className="section-label" style={{ marginTop: 4 }}>Edición</span>
+            <button className="action-btn" onClick={onUndo} disabled={outlinePointCount === 0}>
+              <span>↩</span> Deshacer punto
+            </button>
+            <button className="action-btn danger" onClick={onReset} disabled={outlinePointCount === 0}>
+              <span>✕</span> Reiniciar
+            </button>
+
+            {outlinePointCount > 0 && !outlineClosed && (
+              <div style={{
+                marginTop: 8, padding: "10px",
+                background: "rgba(59,130,246,0.06)",
+                border: "1px solid rgba(59,130,246,0.2)",
+                borderRadius: "var(--radius-sm)",
+                fontSize: 10, color: "var(--accent)", lineHeight: 1.5,
+              }}>
+                {outlinePointCount < 3
+                  ? `${outlinePointCount} punto${outlinePointCount > 1 ? "s" : ""} — necesitas al menos 3`
+                  : `${outlinePointCount} puntos — clic en el inicio para cerrar`}
+              </div>
+            )}
+
+            {outlineClosed && (
+              <div style={{
+                marginTop: 8, padding: "10px",
+                background: "rgba(34,197,94,0.06)",
+                border: "1px solid rgba(34,197,94,0.2)",
+                borderRadius: "var(--radius-sm)",
+                fontSize: 10, color: "var(--success)", lineHeight: 1.5,
+              }}>
+                ✓ Contorno cerrado
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ─── PHASE 2 ─── */}
+        {phase === "objects" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span className="section-label" style={{ marginTop: 4 }}>Formas</span>
             <div className="tool-list">
               {SHAPES.map(s => (
                 <button key={s.kind} className="tool-btn" onClick={() => onAddObject(s.kind)}>
@@ -104,116 +138,87 @@ export default function LeftSidebar({
                 </button>
               ))}
             </div>
-          </div>
 
-          {/* Inline inspector */}
-          {selectedObject && !selectedObject.fixed && (
-            <div style={{
-              marginTop: 8, padding: "10px 8px",
-              background: "#f7f9ff", borderRadius: 8,
-              border: "1px solid #dde5f5",
-              display: "flex", flexDirection: "column", gap: 6,
-            }}>
-              <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: "#555" }}>
-                {selectedObject.label}
-              </p>
-              <p style={{ margin: 0, fontSize: 10, color: "#aaa" }}>
-                {Math.round(selectedObject.width)}×{Math.round(selectedObject.height)} px
-              </p>
+            {/* Inspector */}
+            {selectedObject && !selectedObject.fixed && (
+              <div className="inspector-card">
+                <div>
+                  <div className="inspector-label">{selectedObject.label}</div>
+                  <div className="inspector-sub">
+                    {Math.round(selectedObject.width)} × {Math.round(selectedObject.height)} px
+                  </div>
+                </div>
 
-              {/* Rotation slider */}
-              <div>
-                <label style={{ fontSize: 10, color: "#666", display: "flex", justifyContent: "space-between" }}>
-                  <span>↻ Rotación</span>
-                  <span style={{ fontWeight: 600 }}>{Math.round(selectedObject.rotation)}°</span>
-                </label>
-                <input
-                  type="range"
-                  min={0} max={359} step={1}
-                  value={selectedObject.rotation}
-                  onChange={e => onSetRotation(selectedObject.id, Number(e.target.value))}
-                  style={{ width: "100%", marginTop: 4, cursor: "pointer" }}
-                />
+                {/* Rotation */}
+                <div>
+                  <div className="rotation-row" style={{ marginBottom: 6 }}>
+                    <span className="rotation-label">↻ Rotación</span>
+                    <span className="rotation-value">{Math.round(selectedObject.rotation)}°</span>
+                  </div>
+                  <input
+                    type="range" min={0} max={359} step={1}
+                    value={selectedObject.rotation}
+                    onChange={e => onSetRotation(selectedObject.id, Number(e.target.value))}
+                  />
+                </div>
+
+                <button className="action-btn primary" onClick={() => onFixObject(selectedObject.id)}>
+                  ✓ Aplicar y fijar
+                </button>
+                <button className="action-btn danger" onClick={() => onDeleteObject(selectedObject.id)}>
+                  <span>✕</span> Eliminar
+                </button>
               </div>
+            )}
 
-              <button
-                className="action-btn"
-                style={{ background: "#1a1a1a", color: "#fff", border: "none", fontWeight: 600, fontSize: 11 }}
-                onClick={() => onFixObject(selectedObject.id)}
-              >
-                ✓ Aplicar y fijar
-              </button>
-              <button className="action-btn danger" style={{ fontSize: 11 }} onClick={() => onDeleteObject(selectedObject.id)}>
-                ✕ Eliminar
-              </button>
-            </div>
-          )}
-
-          {selectedObject && selectedObject.fixed && (
-            <div style={{ marginTop: 8, padding: 8, background: "#f5f5f5", borderRadius: 8, fontSize: 10, color: "#bbb", textAlign: "center" }}>
-              Objeto fijado
-            </div>
-          )}
-
-          <div style={{ marginTop: "auto", borderTop: "1px solid #eee", paddingTop: 10 }}>
-            <button className="action-btn" style={{ background: "#1a1a1a", color: "#fff", border: "none", fontWeight: 600 }} onClick={onNextPhase}>
-              Siguiente →
-            </button>
+            {selectedObject?.fixed && (
+              <div className="fixed-badge">Elemento fijado</div>
+            )}
           </div>
-        </>
-      )}
+        )}
 
-      {/* ─── PHASE 3 ─────────────────────────────────── */}
-      {phase === "labels" && (
-        <>
-          <div className="sidebar-section">
-            <span className="section-label">Texto</span>
+        {/* ─── PHASE 3 ─── */}
+        {phase === "labels" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span className="section-label" style={{ marginTop: 4 }}>Etiquetas</span>
             <button className="tool-btn" onClick={onAddLabel}>
-              <span className="tool-icon">Aa</span>
+              <span className="tool-icon" style={{ fontFamily: "serif", fontStyle: "italic" }}>Aa</span>
               <span className="tool-label">Añadir texto</span>
             </button>
-          </div>
 
-          {selectedLabel && !selectedLabel.fixed && (
-            <div style={{
-              marginTop: 8, padding: "10px 8px",
-              background: "#fafafa", borderRadius: 8,
-              border: "1px solid #eee",
-              display: "flex", flexDirection: "column", gap: 6,
-            }}>
-              <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: "#555" }}>Contenido</p>
-              <input
-                type="text"
-                style={{
-                  width: "100%", padding: "5px 8px",
-                  borderRadius: 6, border: "1px solid #ddd",
-                  fontSize: 12, boxSizing: "border-box", fontFamily: "inherit",
-                }}
-                value={selectedLabel.text}
-                onChange={e => onUpdateLabelText(selectedLabel.id, e.target.value)}
-                autoFocus
-                placeholder="Mesa, Cocina…"
-              />
-              <button
-                className="action-btn"
-                style={{ background: "#1a1a1a", color: "#fff", border: "none", fontWeight: 600, fontSize: 11 }}
-                onClick={() => onFixLabel(selectedLabel.id)}
-              >
-                ✓ Fijar
-              </button>
-              <button className="action-btn danger" style={{ fontSize: 11 }} onClick={() => onDeleteLabel(selectedLabel.id)}>
-                ✕ Eliminar
-              </button>
-            </div>
-          )}
-
-          <div style={{ marginTop: "auto", borderTop: "1px solid #eee", paddingTop: 10 }}>
-            <button className="action-btn" style={{ background: "#1a1a1a", color: "#fff", border: "none", fontWeight: 600 }} onClick={onNextPhase}>
-              Finalizar ✓
-            </button>
+            {selectedLabel && !selectedLabel.fixed && (
+              <div className="inspector-card">
+                <div className="inspector-label">Editar</div>
+                <input
+                  type="text"
+                  className="text-input"
+                  value={selectedLabel.text}
+                  onChange={e => onUpdateLabelText(selectedLabel.id, e.target.value)}
+                  autoFocus
+                  placeholder="Mesa, Cocina, Dormitorio…"
+                />
+                <button className="action-btn primary" onClick={() => onFixLabel(selectedLabel.id)}>
+                  ✓ Fijar
+                </button>
+                <button className="action-btn danger" onClick={() => onDeleteLabel(selectedLabel.id)}>
+                  <span>✕</span> Eliminar
+                </button>
+              </div>
+            )}
           </div>
-        </>
-      )}
+        )}
+      </div>
+
+      {/* ── Footer: next/finish ── */}
+      <div className="sidebar-footer">
+        <button
+          className="action-btn primary"
+          disabled={!nextEnabled}
+          onClick={onNextPhase}
+        >
+          {phase === "labels" ? "Finalizar  ✓" : "Siguiente  →"}
+        </button>
+      </div>
     </aside>
   );
 }

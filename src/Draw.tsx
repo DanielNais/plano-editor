@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Stage, Layer, Rect, Circle, Line, Group, Text } from "react-konva";
 import type { Phase, LabelBox } from "./draw/types";
 import { useOutline, snap } from "./draw/hooks/useOutline";
@@ -9,19 +9,16 @@ import LeftSidebar from "./draw/components/LeftSidebar";
 import "./styles/draw.css";
 
 const GRID     = 40;
-const ASPECT_W = 16;
-const ASPECT_H = 9;
-const SIDEBAR  = 180;
+const SIDEBAR  = 220;
 
+// Canvas fills the window minus the sidebar
 function useCanvasSize() {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const calc = useCallback(() => {
-    const pad  = 40;
-    const maxW = window.innerWidth  - SIDEBAR - pad;
-    const maxH = window.innerHeight - pad;
-    let w = maxW, h = w * (ASPECT_H / ASPECT_W);
-    if (h > maxH) { h = maxH; w = h * (ASPECT_W / ASPECT_H); }
-    setSize({ width: Math.floor(w), height: Math.floor(h) });
+    setSize({
+      width:  Math.max(100, window.innerWidth  - SIDEBAR),
+      height: Math.max(100, window.innerHeight),
+    });
   }, []);
   useEffect(() => {
     calc();
@@ -31,42 +28,60 @@ function useCanvasSize() {
   return size;
 }
 
-/** Plain text label — no box, no background, just dark text */
+/** Build a rotating resize cursor as an SVG data URI */
+function resizeCursorUrl(rotation: number): string {
+  const r = rotation;
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'>
+    <g transform='rotate(${r} 12 12)'>
+      <path d='M20 12 L14 6 L14 9 L4 9 L4 15 L14 15 L14 18 Z'
+        fill='%231a1a1a' stroke='white' stroke-width='1.5'/>
+    </g>
+  </svg>`;
+  return `url("data:image/svg+xml,${svg}") 12 12, nwse-resize`;
+}
+
+/** Plain canvas label */
 function CanvasLabel({ lb, isSelected, onSelect }: {
   lb: LabelBox; isSelected: boolean; onSelect: () => void;
 }) {
+  const estimatedW = Math.max(60, lb.text.length * 7.8 + 4);
   return (
     <Group x={lb.x} y={lb.y} onClick={onSelect} onTap={onSelect}>
-      {/* Invisible hit area */}
-      <Rect
-        width={160} height={24}
-        fill="transparent"
-      />
+      <Rect width={estimatedW} height={20} fill="transparent" />
       <Text
-        x={0} y={0}
         text={lb.text}
-        fontSize={13}
+        fontSize={12}
         fontStyle="600"
-        fill={isSelected ? "#2980b9" : "#1a1a1a"}
-        shadowColor={isSelected ? "rgba(41,128,185,0.3)" : "transparent"}
-        shadowBlur={isSelected ? 4 : 0}
+        fontFamily="'DM Mono', monospace"
+        fill={isSelected ? "#3b82f6" : "#1a1a2e"}
+        letterSpacing={0.3}
       />
-      {/* Underline hint when selected */}
       {isSelected && (
         <Line
-          points={[0, 18, Math.min(lb.text.length * 7.5, 150), 18]}
-          stroke="#2980b9" strokeWidth={1} dash={[3, 2]}
+          points={[0, 16, estimatedW, 16]}
+          stroke="#3b82f6" strokeWidth={1} dash={[3, 2]}
         />
       )}
     </Group>
   );
 }
 
+// Canvas colors — paper/blueprint look
+const C = {
+  bg:        "#f8f7f4",
+  gridMinor: "#ede9e0",
+  gridMajor: "#d8d3c8",
+  wallDraw:  "#1a1a2e",
+  wallFixed: "#1a1a2e",
+  fill:      "rgba(59,130,246,0.06)",
+};
+
 export default function Draw() {
-  const [phase, setPhase]     = useState<Phase>("outline");
-  const canvasSize            = useCanvasSize();
-  const [hoverPt, setHoverPt] = useState<{ x: number; y: number } | null>(null);
-  const [cursor, setCursor]   = useState("crosshair");
+  const [phase, setPhase]       = useState<Phase>("outline");
+  const canvasSize              = useCanvasSize();
+  const [hoverPt, setHoverPt]   = useState<{ x: number; y: number } | null>(null);
+  const [mouseCoords, setMouseCoords] = useState({ x: 0, y: 0 });
+  const [cursor, setCursor]     = useState("crosshair");
 
   const outline = useOutline();
   const objects = useObjects();
@@ -75,12 +90,35 @@ export default function Draw() {
   const selectedObject = objects.objects.find(o => o.id === objects.selectedId) ?? null;
   const selectedLabel  = labels.labels.find(l => l.id === labels.selectedId)    ?? null;
 
+  // Rotating resize cursor
+  const resizeCursor = useMemo(() => {
+    if (!selectedObject) return "nwse-resize";
+    return resizeCursorUrl(selectedObject.rotation);
+  }, [selectedObject?.rotation]);
+
+  // Status bar message
+  const statusMsg = useMemo(() => {
+    if (phase === "outline") {
+      if (outline.closed) return "Contorno cerrado — pulsa Siguiente para continuar";
+      if (outline.points.length === 0) return "Haz clic para empezar a trazar";
+      return `${outline.points.length} vértice${outline.points.length > 1 ? "s" : ""} — sigue trazando`;
+    }
+    if (phase === "objects") {
+      if (selectedObject && !selectedObject.fixed)
+        return `${selectedObject.label} seleccionado — arrastra o gira`;
+      return "Selecciona una forma del panel o haz clic en un elemento";
+    }
+    return "Añade etiquetas y arrástralas a su posición";
+  }, [phase, outline.closed, outline.points.length, selectedObject]);
+
+  // Phase navigation
   const handleNextPhase = useCallback(() => {
     if      (phase === "outline" && outline.closed) setPhase("objects");
     else if (phase === "objects")                   setPhase("labels");
     else if (phase === "labels")                    alert("¡Plano finalizado! 🎉");
   }, [phase, outline.closed]);
 
+  // Canvas events
   const handleMouseDown = useCallback((p: { x: number; y: number }) => {
     if      (phase === "outline") outline.addPoint(p.x, p.y);
     else if (phase === "objects") objects.startDrag(p.x, p.y);
@@ -91,20 +129,30 @@ export default function Draw() {
   }, [phase, outline, objects, labels]);
 
   const handleMouseMove = useCallback((p: { x: number; y: number }) => {
+    setMouseCoords(p);
     if (phase === "outline") {
       outline.updatePreview(p.x, p.y);
       setHoverPt({ x: snap(p.x), y: snap(p.y) });
     } else if (phase === "objects") {
       objects.moveDrag(p.x, p.y);
-      setCursor(objects.isOnHandle(p.x, p.y) ? "nwse-resize" : "default");
+      if (objects.isOnHandle(p.x, p.y)) {
+        setCursor(resizeCursor);
+      } else {
+        setCursor("default");
+      }
     } else if (phase === "labels") {
       labels.moveDrag(p.x, p.y);
     }
-  }, [phase, outline, objects, labels]);
+  }, [phase, outline, objects, labels, resizeCursor]);
 
   const handleMouseUp    = useCallback(() => { objects.endDrag(); labels.endDrag(); }, [objects, labels]);
-  const handleMouseLeave = useCallback(() => { setHoverPt(null); objects.endDrag(); labels.endDrag(); }, [objects, labels]);
+  const handleMouseLeave = useCallback(() => {
+    setHoverPt(null);
+    objects.endDrag();
+    labels.endDrag();
+  }, [objects, labels]);
 
+  // Keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const active = document.activeElement;
@@ -117,8 +165,19 @@ export default function Draw() {
     return () => window.removeEventListener("keydown", onKey);
   }, [phase, objects, labels]);
 
-  const outlinePoly  = outline.points.flatMap(p => [p.x, p.y]);
-  const stageCursor  = phase === "outline" ? "crosshair" : phase === "objects" ? cursor : "default";
+  const outlinePoly = outline.points.flatMap(p => [p.x, p.y]);
+
+  const stageCursor =
+    phase === "outline" ? "crosshair" :
+    phase === "objects" ? cursor :
+    "default";
+
+  // Grid lines
+  const vLines = Array.from({ length: Math.floor(canvasSize.width  / GRID) + 1 }, (_, i) => i);
+  const hLines = Array.from({ length: Math.floor(canvasSize.height / GRID) + 1 }, (_, i) => i);
+
+  // Coordinates in "meters" (1 cell = 0.5m)
+  const toM = (px: number) => ((px / GRID) * 0.5).toFixed(1);
 
   return (
     <div className="draw-page">
@@ -141,87 +200,115 @@ export default function Draw() {
         onUpdateLabelText={labels.updateText}
       />
 
-      <main className="canvas-area" style={{ flex: 1 }}>
+      <main className="canvas-area">
+        {/* Status bar */}
+        <div className="status-bar">
+          <div className="status-dot" />
+          {statusMsg}
+        </div>
+
+        {/* Mouse coords */}
+        <div className="coords-bar">
+          X {toM(mouseCoords.x)} m &nbsp;·&nbsp; Y {toM(mouseCoords.y)} m
+        </div>
+
         <div className="canvas-wrapper">
-          {canvasSize.width > 0 && (
-            <Stage
-              width={canvasSize.width}
-              height={canvasSize.height}
-              style={{ cursor: stageCursor }}
-              onMouseDown={e => { const p = e.target.getStage()?.getPointerPosition(); if (p) handleMouseDown(p); }}
-              onMouseMove={e => { const p = e.target.getStage()?.getPointerPosition(); if (p) handleMouseMove(p); }}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseLeave}
-            >
-              <Layer>
-                <Rect x={0} y={0} width={canvasSize.width} height={canvasSize.height} fill="#fff" />
+          <div className="canvas-inner">
+            {canvasSize.width > 0 && (
+              <Stage
+                width={canvasSize.width}
+                height={canvasSize.height}
+                style={{ cursor: stageCursor, display: "block" }}
+                onMouseDown={e => { const p = e.target.getStage()?.getPointerPosition(); if (p) handleMouseDown(p); }}
+                onMouseMove={e => { const p = e.target.getStage()?.getPointerPosition(); if (p) handleMouseMove(p); }}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseLeave}
+              >
+                <Layer>
+                  {/* Paper background */}
+                  <Rect x={0} y={0} width={canvasSize.width} height={canvasSize.height} fill={C.bg} />
 
-                {/* Grid */}
-                {Array.from({ length: Math.floor(canvasSize.width / GRID) + 1 }).map((_, i) => (
-                  <Line key={`v${i}`} points={[i * GRID, 0, i * GRID, canvasSize.height]}
-                    stroke={i % 4 === 0 ? "#e8e8e8" : "#f5f5f5"} strokeWidth={i % 4 === 0 ? 1 : 0.5} />
-                ))}
-                {Array.from({ length: Math.floor(canvasSize.height / GRID) + 1 }).map((_, i) => (
-                  <Line key={`h${i}`} points={[0, i * GRID, canvasSize.width, i * GRID]}
-                    stroke={i % 4 === 0 ? "#e8e8e8" : "#f5f5f5"} strokeWidth={i % 4 === 0 ? 1 : 0.5} />
-                ))}
+                  {/* Minor grid */}
+                  {vLines.map(i => (
+                    <Line key={`v${i}`} points={[i * GRID, 0, i * GRID, canvasSize.height]}
+                      stroke={i % 4 === 0 ? C.gridMajor : C.gridMinor}
+                      strokeWidth={i % 4 === 0 ? 0.8 : 0.4} />
+                  ))}
+                  {hLines.map(i => (
+                    <Line key={`h${i}`} points={[0, i * GRID, canvasSize.width, i * GRID]}
+                      stroke={i % 4 === 0 ? C.gridMajor : C.gridMinor}
+                      strokeWidth={i % 4 === 0 ? 0.8 : 0.4} />
+                  ))}
 
-                {/* Room fill */}
-                {phase !== "outline" && outline.closed && outlinePoly.length >= 6 && (
-                  <Line points={outlinePoly} closed fill="rgba(235,242,255,0.7)" stroke="transparent" />
-                )}
+                  {/* Room fill */}
+                  {phase !== "outline" && outline.closed && outlinePoly.length >= 6 && (
+                    <Line points={outlinePoly} closed fill={C.fill} stroke="transparent" />
+                  )}
 
-                {/* Walls */}
-                {outline.lines.map(ln => (
-                  <Line key={ln.id} points={[ln.x1, ln.y1, ln.x2, ln.y2]}
-                    stroke={phase === "outline" ? "#1a1a1a" : "#333"}
-                    strokeWidth={phase === "outline" ? 2 : 3} />
-                ))}
+                  {/* Walls */}
+                  {outline.lines.map(ln => (
+                    <Line key={ln.id}
+                      points={[ln.x1, ln.y1, ln.x2, ln.y2]}
+                      stroke={C.wallFixed}
+                      strokeWidth={phase === "outline" ? 2 : 3}
+                      lineCap="round" lineJoin="round"
+                    />
+                  ))}
 
-                {/* Vertex dots */}
-                {phase === "outline" && outline.points.map((pt, i) => (
-                  <Group key={i}>
-                    <Circle x={pt.x} y={pt.y}
-                      radius={i === 0 && outline.points.length >= 3 ? 8 : 4}
-                      fill={i === 0 ? "#2980b9" : "#1a1a1a"}
-                      stroke={i === 0 ? "#fff" : "transparent"} strokeWidth={2} />
-                    {i === 0 && outline.points.length >= 3 && (
-                      <Circle x={pt.x} y={pt.y} radius={13}
-                        stroke="#2980b9" strokeWidth={1.5} dash={[4, 3]} fill="transparent" />
-                    )}
-                  </Group>
-                ))}
+                  {/* Vertex dots (outline phase only) */}
+                  {phase === "outline" && outline.points.map((pt, i) => (
+                    <Group key={i}>
+                      <Circle x={pt.x} y={pt.y}
+                        radius={i === 0 && outline.points.length >= 3 ? 8 : 4}
+                        fill={i === 0 ? "#3b82f6" : C.wallDraw}
+                        stroke={i === 0 ? "#fff" : "transparent"}
+                        strokeWidth={2}
+                      />
+                      {i === 0 && outline.points.length >= 3 && (
+                        <Circle x={pt.x} y={pt.y} radius={13}
+                          stroke="#3b82f6" strokeWidth={1.5}
+                          dash={[4, 3]} fill="transparent"
+                        />
+                      )}
+                    </Group>
+                  ))}
 
-                {/* Preview line */}
-                {phase === "outline" && !outline.closed && outline.points.length > 0 && hoverPt && (
-                  <>
-                    <Line
-                      points={[outline.points[outline.points.length - 1].x, outline.points[outline.points.length - 1].y, hoverPt.x, hoverPt.y]}
-                      stroke="#2980b9" strokeWidth={1.5} dash={[6, 4]} />
-                    <Circle x={hoverPt.x} y={hoverPt.y} radius={4} fill="#2980b9" opacity={0.6} />
-                  </>
-                )}
+                  {/* Preview line while drawing */}
+                  {phase === "outline" && !outline.closed && outline.points.length > 0 && hoverPt && (
+                    <>
+                      <Line
+                        points={[
+                          outline.points[outline.points.length - 1].x,
+                          outline.points[outline.points.length - 1].y,
+                          hoverPt.x, hoverPt.y,
+                        ]}
+                        stroke="#3b82f6" strokeWidth={1.5} dash={[6, 4]}
+                      />
+                      <Circle x={hoverPt.x} y={hoverPt.y} radius={4} fill="#3b82f6" opacity={0.7} />
+                    </>
+                  )}
 
-                {/* Objects */}
-                {(phase === "objects" || phase === "labels") && objects.objects.map(obj => (
-                  <ObjectSymbol
-                    key={obj.id} obj={obj}
-                    isSelected={obj.id === objects.selectedId && phase === "objects"}
-                    onSelect={() => { if (phase === "objects" && !obj.fixed) objects.setSelectedId(obj.id); }}
-                  />
-                ))}
+                  {/* Placed objects */}
+                  {(phase === "objects" || phase === "labels") && objects.objects.map(obj => (
+                    <ObjectSymbol
+                      key={obj.id} obj={obj}
+                      isSelected={obj.id === objects.selectedId && phase === "objects"}
+                      onSelect={() => { if (phase === "objects" && !obj.fixed) objects.setSelectedId(obj.id); }}
+                    />
+                  ))}
 
-                {/* Labels — plain text, no box */}
-                {phase === "labels" && labels.labels.map(lb => (
-                  <CanvasLabel
-                    key={lb.id} lb={lb}
-                    isSelected={lb.id === labels.selectedId}
-                    onSelect={() => labels.setSelectedId(lb.id)}
-                  />
-                ))}
-              </Layer>
-            </Stage>
-          )}
+                  {/* Text labels */}
+                  {phase === "labels" && labels.labels.map(lb => (
+                    <CanvasLabel
+                      key={lb.id} lb={lb}
+                      isSelected={lb.id === labels.selectedId}
+                      onSelect={() => labels.setSelectedId(lb.id)}
+                    />
+                  ))}
+                </Layer>
+              </Stage>
+            )}
+          </div>
         </div>
       </main>
     </div>

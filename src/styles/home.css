@@ -1,40 +1,180 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0d0f12;
+  color: #e8eaf0;
+  font-family: 'DM Mono', monospace;
+  overflow: hidden;
+}
+
 .home-container {
-  min-height: 100vh;
-  background-color: #ffffff;
+  width: 100vw;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-family: sans-serif;
+  background:
+    radial-gradient(ellipse at 30% 40%, rgba(59,130,246,0.08) 0%, transparent 55%),
+    radial-gradient(ellipse at 75% 65%, rgba(59,130,246,0.04) 0%, transparent 45%),
+    #0d0f12;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Blueprint grid background */
+.home-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(59,130,246,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59,130,246,0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+
+.home-container::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(59,130,246,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59,130,246,0.015) 1px, transparent 1px);
+  background-size: 8px 8px;
+  pointer-events: none;
+}
+
+.home-inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.home-logo-mark {
+  width: 52px; height: 52px;
+  background: #3b82f6;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+  box-shadow: 0 0 30px rgba(59,130,246,0.4), 0 0 60px rgba(59,130,246,0.15);
+  margin-bottom: 20px;
+  animation: pulse 3s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 30px rgba(59,130,246,0.4), 0 0 60px rgba(59,130,246,0.15); }
+  50%       { box-shadow: 0 0 40px rgba(59,130,246,0.55), 0 0 80px rgba(59,130,246,0.2); }
 }
 
 .home-title {
-  font-size: 3rem;
-  margin-bottom: 0.5rem;
+  font-family: 'Syne', sans-serif;
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: -1.5px;
+  color: #e8eaf0;
+  line-height: 1;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.home-title span {
+  color: #3b82f6;
 }
 
 .home-subtitle {
-  color: #777;
-  margin-bottom: 3rem;
+  font-size: 13px;
+  color: #7a8494;
+  letter-spacing: 0.3px;
+  margin-bottom: 48px;
+  text-align: center;
 }
 
 .home-card-container {
   display: flex;
-  gap: 2rem;
+  gap: 16px;
 }
 
 .home-card {
-  width: 260px;
-  padding: 2rem;
-  border-radius: 12px;
-  border: 1px solid #eee;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  width: 240px;
+  padding: 28px 24px;
+  background: #13161b;
+  border: 1px solid #252a33;
+  border-radius: 14px;
   cursor: pointer;
   transition: all 0.2s ease;
-  text-align: center;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+}
+
+.home-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(59,130,246,0.06) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 
 .home-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  border-color: #3b82f6;
+  transform: translateY(-3px);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.4), 0 0 20px rgba(59,130,246,0.1);
+}
+
+.home-card:hover::before { opacity: 1; }
+
+.home-card-icon {
+  font-size: 28px;
+  margin-bottom: 14px;
+  display: block;
+}
+
+.home-card h2 {
+  font-family: 'Syne', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: #e8eaf0;
+  margin-bottom: 6px;
+}
+
+.home-card p {
+  font-size: 11px;
+  color: #7a8494;
+  line-height: 1.6;
+}
+
+.home-card-badge {
+  display: inline-block;
+  margin-top: 14px;
+  padding: 3px 8px;
+  background: rgba(59,130,246,0.12);
+  border: 1px solid rgba(59,130,246,0.25);
+  border-radius: 20px;
+  font-size: 9px;
+  color: #3b82f6;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.home-card-badge.soon {
+  background: rgba(122,132,148,0.1);
+  border-color: rgba(122,132,148,0.2);
+  color: #7a8494;
+}
+
+.home-version {
+  position: absolute;
+  bottom: 24px;
+  font-size: 9px;
+  color: #3d4450;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
 }
