@@ -1,7 +1,7 @@
 import { useState } from "react";
 import Home from "./Home";
 import Draw from "./Draw";
-
+import Upload from "./Upload";
 
 function App() {
   const [mode, setMode] = useState<"home" | "draw" | "upload">("home");
@@ -15,7 +15,7 @@ function App() {
   }
 
   if (mode === "upload") {
-    return <div>Subida de plano (próximamente)</div>;
+    return <Upload />;
   }
 
   return null;

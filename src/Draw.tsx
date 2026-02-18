@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Stage, Layer, Rect, Circle, Line, Group, Text } from "react-konva";
+import type Konva from "konva";
 import type { Phase, LabelBox } from "./draw/types";
 import { useOutline, snap } from "./draw/hooks/useOutline";
 import { useObjects } from "./draw/hooks/useObjects";
@@ -8,15 +9,15 @@ import { ObjectSymbol } from "./draw/components/ObjectSymbol";
 import LeftSidebar from "./draw/components/LeftSidebar";
 import "./styles/draw.css";
 
-const GRID     = 40;
-const SIDEBAR  = 220;
+const GRID = 40;
+const SIDEBAR = 220;
 
 // Canvas fills the window minus the sidebar
 function useCanvasSize() {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const calc = useCallback(() => {
     setSize({
-      width:  Math.max(100, window.innerWidth  - SIDEBAR),
+      width: Math.max(100, window.innerWidth - SIDEBAR),
       height: Math.max(100, window.innerHeight),
     });
   }, []);
@@ -68,27 +69,35 @@ function CanvasLabel({ lb, isSelected, onSelect }: {
 
 // Canvas colors — paper/blueprint look
 const C = {
-  bg:        "#f8f7f4",
+  bg: "#f8f7f4",
   gridMinor: "#ede9e0",
   gridMajor: "#d8d3c8",
-  wallDraw:  "#1a1a2e",
+  wallDraw: "#1a1a2e",
   wallFixed: "#1a1a2e",
-  fill:      "rgba(59,130,246,0.06)",
+  fill: "rgba(59,130,246,0.06)",
 };
 
 export default function Draw() {
-  const [phase, setPhase]       = useState<Phase>("outline");
-  const canvasSize              = useCanvasSize();
-  const [hoverPt, setHoverPt]   = useState<{ x: number; y: number } | null>(null);
+  const [phase, setPhase] = useState<Phase>("outline");
+  const canvasSize = useCanvasSize();
+  const [hoverPt, setHoverPt] = useState<{ x: number; y: number } | null>(null);
   const [mouseCoords, setMouseCoords] = useState({ x: 0, y: 0 });
-  const [cursor, setCursor]     = useState("crosshair");
+  const [cursor, setCursor] = useState("crosshair");
+  const stageRef = useRef<Konva.Stage>(null);
+
+  // Export modal states
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportPreview, setExportPreview] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [result3D, setResult3D] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const outline = useOutline();
   const objects = useObjects();
-  const labels  = useLabels();
+  const labels = useLabels();
 
   const selectedObject = objects.objects.find(o => o.id === objects.selectedId) ?? null;
-  const selectedLabel  = labels.labels.find(l => l.id === labels.selectedId)    ?? null;
+  const selectedLabel = labels.labels.find(l => l.id === labels.selectedId) ?? null;
 
   // Rotating resize cursor
   const resizeCursor = useMemo(() => {
@@ -113,16 +122,69 @@ export default function Draw() {
 
   // Phase navigation
   const handleNextPhase = useCallback(() => {
-    if      (phase === "outline" && outline.closed) setPhase("objects");
-    else if (phase === "objects")                   setPhase("labels");
-    else if (phase === "labels")                    alert("¡Plano finalizado! 🎉");
+    if (phase === "outline" && outline.closed) setPhase("objects");
+    else if (phase === "objects") setPhase("labels");
+    else if (phase === "labels") {
+      // Generate export preview
+      if (stageRef.current) {
+        const dataURL = stageRef.current.toDataURL({ pixelRatio: 3 });
+        setExportPreview(dataURL);
+        setShowExportModal(true);
+      }
+    }
   }, [phase, outline.closed]);
+
+  // Generate 3D from canvas
+  const handleGenerate3D = async () => {
+    if (!exportPreview) return;
+
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      // Convert dataURL to Blob
+      const blob = await (await fetch(exportPreview)).blob();
+
+      const formData = new FormData();
+      formData.append("imagen", blob, "plano.png");
+
+      const response = await fetch("/api/generar.php", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Error al procesar el plano");
+      }
+
+      const data = await response.json();
+
+      if (data.url) {
+        setResult3D(data.url);
+      } else if (data.base64) {
+        setResult3D(`data:image/jpeg;base64,${data.base64}`);
+      } else {
+        throw new Error("Respuesta inválida del servidor");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error desconocido");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowExportModal(false);
+    setExportPreview(null);
+    setResult3D(null);
+    setError(null);
+  };
 
   // Canvas events
   const handleMouseDown = useCallback((p: { x: number; y: number }) => {
-    if      (phase === "outline") outline.addPoint(p.x, p.y);
+    if (phase === "outline") outline.addPoint(p.x, p.y);
     else if (phase === "objects") objects.startDrag(p.x, p.y);
-    else if (phase === "labels")  {
+    else if (phase === "labels") {
       const hit = labels.startDrag(p.x, p.y);
       if (!hit) labels.setSelectedId(null);
     }
@@ -145,7 +207,7 @@ export default function Draw() {
     }
   }, [phase, outline, objects, labels, resizeCursor]);
 
-  const handleMouseUp    = useCallback(() => { objects.endDrag(); labels.endDrag(); }, [objects, labels]);
+  const handleMouseUp = useCallback(() => { objects.endDrag(); labels.endDrag(); }, [objects, labels]);
   const handleMouseLeave = useCallback(() => {
     setHoverPt(null);
     objects.endDrag();
@@ -159,7 +221,7 @@ export default function Draw() {
       if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       if (phase === "objects" && objects.selectedId) objects.deleteObject(objects.selectedId);
-      if (phase === "labels"  && labels.selectedId)  labels.deleteLabel(labels.selectedId);
+      if (phase === "labels" && labels.selectedId) labels.deleteLabel(labels.selectedId);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -169,11 +231,11 @@ export default function Draw() {
 
   const stageCursor =
     phase === "outline" ? "crosshair" :
-    phase === "objects" ? cursor :
-    "default";
+      phase === "objects" ? cursor :
+        "default";
 
   // Grid lines
-  const vLines = Array.from({ length: Math.floor(canvasSize.width  / GRID) + 1 }, (_, i) => i);
+  const vLines = Array.from({ length: Math.floor(canvasSize.width / GRID) + 1 }, (_, i) => i);
   const hLines = Array.from({ length: Math.floor(canvasSize.height / GRID) + 1 }, (_, i) => i);
 
   // Coordinates in "meters" (1 cell = 0.5m)
@@ -216,6 +278,7 @@ export default function Draw() {
           <div className="canvas-inner">
             {canvasSize.width > 0 && (
               <Stage
+                ref={stageRef}
                 width={canvasSize.width}
                 height={canvasSize.height}
                 style={{ cursor: stageCursor, display: "block" }}
@@ -311,6 +374,67 @@ export default function Draw() {
           </div>
         </div>
       </main>
+
+      {/* Export modal */}
+      {showExportModal && (
+        <div className="export-modal-overlay" onClick={handleCloseModal}>
+          <div className="export-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="export-modal-close" onClick={handleCloseModal}>✕</button>
+
+            {!result3D ? (
+              <>
+                <h2 className="export-modal-title">🎉 Plano completado</h2>
+                <p className="export-modal-subtitle">
+                  Tu plano está listo. Genera una vista 3D equirectangular ahora.
+                </p>
+
+                {exportPreview && (
+                  <img src={exportPreview} alt="Preview" className="export-preview" />
+                )}
+
+                {error && (
+                  <div className="export-error">
+                    <span>⚠️</span> {error}
+                  </div>
+                )}
+
+                <div className="export-actions">
+                  <button
+                    className="btn-primary"
+                    onClick={handleGenerate3D}
+                    disabled={isProcessing}
+                  >
+                    {isProcessing ? (
+                      <>
+                        <span className="spinner" />
+                        Generando 3D...
+                      </>
+                    ) : (
+                      "🚀 Generar vista 3D"
+                    )}
+                  </button>
+                  <a href={exportPreview || "#"} download="plano.png" className="btn-secondary">
+                    ⬇ Descargar plano
+                  </a>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="export-modal-title">✨ Vista 3D generada</h2>
+                <img src={result3D} alt="Resultado 3D" className="export-result" />
+                <div className="export-actions">
+                  <a href={result3D} download="plano-3d.jpg" className="btn-primary">
+                    ⬇ Descargar vista 3D
+                  </a>
+                  <button className="btn-secondary" onClick={handleCloseModal}>
+                    Cerrar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

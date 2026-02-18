@@ -24,7 +24,7 @@ export default function Home({ onSelect }: Props) {
             <span className="home-card-icon">📐</span>
             <h2>Sube tu plano</h2>
             <p>Importa una imagen existente y genera el render 3D automáticamente.</p>
-            <span className="home-card-badge soon">Próximamente</span>
+            <span className="home-card-badge">Disponible</span>
           </div>
         </div>
       </div>
