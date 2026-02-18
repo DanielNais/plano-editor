@@ -17,6 +17,10 @@ export function ObjectSymbol({ obj, isSelected, onSelect, onRotateStart }: Props
   const sw     = 2;
   const sel    = isSelected ? { shadowColor: "#2980b9", shadowBlur: 9, shadowOpacity: 0.65 } : {};
 
+  // FIX: posicionamos el grupo en el CENTRO del objeto para que la rotación
+  // pivote bien, pero usando offsetX/offsetY fijos basados en w/2 y h/2
+  // que se calculan UNA SOLA VEZ por render — no cambian durante el drag.
+  // Todos los hijos usan coords locales desde (0,0) = top-left del objeto.
   return (
     <Group
       x={x + w / 2}
@@ -29,13 +33,13 @@ export function ObjectSymbol({ obj, isSelected, onSelect, onRotateStart }: Props
     >
       {/* ── rect ── */}
       {kind === "rect" && (
-        <Rect width={w} height={h}
+        <Rect x={0} y={0} width={w} height={h}
           fill="rgba(200,220,255,0.15)" stroke={stroke} strokeWidth={sw} {...sel} />
       )}
 
       {/* ── circle ── */}
       {kind === "circle" && (
-        <Circle x={w / 2} y={h / 2} radius={w / 2}
+        <Circle x={w / 2} y={h / 2} radius={Math.min(w, h) / 2}
           fill="rgba(200,220,255,0.15)" stroke={stroke} strokeWidth={sw} {...sel} />
       )}
 
@@ -63,7 +67,7 @@ export function ObjectSymbol({ obj, isSelected, onSelect, onRotateStart }: Props
       {/* ── window: frame + divider ── */}
       {kind === "window" && (
         <Group {...sel}>
-          <Rect width={w} height={h} fill="#d4eeff" stroke={stroke} strokeWidth={sw + 1} />
+          <Rect x={0} y={0} width={w} height={h} fill="#d4eeff" stroke={stroke} strokeWidth={sw + 1} />
           <Line points={[w / 2, 0, w / 2, h]} stroke={stroke} strokeWidth={sw} />
           <Line points={[w * 0.1, h / 2, w * 0.4, h / 2]} stroke={stroke} strokeWidth={1} />
           <Line points={[w * 0.6, h / 2, w * 0.9, h / 2]} stroke={stroke} strokeWidth={1} />
@@ -72,8 +76,12 @@ export function ObjectSymbol({ obj, isSelected, onSelect, onRotateStart }: Props
 
       {/* ── Selection dashed border ── */}
       {isSelected && (
-        <Rect x={-5} y={-5} width={w + 10} height={h + 10}
-          stroke="#2980b9" strokeWidth={1.5} dash={[6, 3]} fill="transparent"
+        <Rect
+          x={-6} y={-6}
+          width={w + 12} height={h + 12}
+          stroke="#2980b9" strokeWidth={1.5}
+          dash={[6, 3]} fill="transparent"
+          listening={false}
         />
       )}
 
@@ -105,7 +113,7 @@ export function ObjectSymbol({ obj, isSelected, onSelect, onRotateStart }: Props
         >
           {/* Line connecting to object */}
           <Line points={[0, 0, 0, ROTATE_HANDLE_OFFSET - 5]} stroke="#2980b9" strokeWidth={1} dash={[3, 2]} />
-          
+
           {/* Circular handle */}
           <Circle
             radius={10}
