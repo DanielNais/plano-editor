@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Stage, Layer, Rect, Circle, Line, Group, Text } from "react-konva";
 import type Konva from "konva";
-import type { Phase, LabelBox } from "./draw/types";
+import type { Phase, LabelBox, ObjectKind } from "./draw/types";
 import { useOutline, snap } from "./draw/hooks/useOutline";
 import { useObjects } from "./draw/hooks/useObjects";
 import { useLabels } from "./draw/hooks/useLabels";
@@ -10,15 +10,15 @@ import LeftSidebar from "./draw/components/LeftSidebar";
 import Editor from "./Editor";
 import "./styles/draw.css";
 
-const GRID = 40;
-const SIDEBAR = 220;
+const GRID     = 20;
+const SIDEBAR  = 220;
 
 // Canvas fills the window minus the sidebar
 function useCanvasSize() {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const calc = useCallback(() => {
     setSize({
-      width: Math.max(100, window.innerWidth - SIDEBAR),
+      width:  Math.max(100, window.innerWidth  - SIDEBAR),
       height: Math.max(100, window.innerHeight),
     });
   }, []);
@@ -43,12 +43,19 @@ function resizeCursorUrl(rotation: number): string {
 }
 
 /** Plain canvas label */
-function CanvasLabel({ lb, isSelected, onSelect }: {
-  lb: LabelBox; isSelected: boolean; onSelect: () => void;
+function CanvasLabel({ lb, isSelected, onSelect, onDoubleClick }: {
+  lb: LabelBox; isSelected: boolean; onSelect: () => void; onDoubleClick: () => void;
 }) {
   const estimatedW = Math.max(60, lb.text.length * 7.8 + 4);
   return (
-    <Group x={lb.x} y={lb.y} onClick={onSelect} onTap={onSelect}>
+    <Group 
+      x={lb.x} 
+      y={lb.y} 
+      onClick={onSelect} 
+      onTap={onSelect}
+      onDblClick={onDoubleClick}
+      onDblTap={onDoubleClick}
+    >
       <Rect width={estimatedW} height={20} fill="transparent" />
       <Text
         text={lb.text}
@@ -70,21 +77,30 @@ function CanvasLabel({ lb, isSelected, onSelect }: {
 
 // Canvas colors — paper/blueprint look
 const C = {
-  bg: "#f8f7f4",
+  bg:        "#f8f7f4",
   gridMinor: "#ede9e0",
   gridMajor: "#d8d3c8",
-  wallDraw: "#1a1a2e",
+  wallDraw:  "#1a1a2e",
   wallFixed: "#1a1a2e",
-  fill: "rgba(59,130,246,0.06)",
+  fill:      "rgba(59,130,246,0.06)",
 };
 
 export default function Draw() {
-  const [phase, setPhase] = useState<Phase>("outline");
-  const canvasSize = useCanvasSize();
-  const [hoverPt, setHoverPt] = useState<{ x: number; y: number } | null>(null);
+  const [phase, setPhase]       = useState<Phase>("outline");
+  const canvasSize              = useCanvasSize();
+  const [hoverPt, setHoverPt]   = useState<{ x: number; y: number } | null>(null);
   const [mouseCoords, setMouseCoords] = useState({ x: 0, y: 0 });
-  const [cursor, setCursor] = useState("crosshair");
+  const [cursor, setCursor]     = useState("crosshair");
   const stageRef = useRef<Konva.Stage>(null);
+
+  // Drag & drop state
+  const [draggingTool, setDraggingTool] = useState<ObjectKind | "text" | null>(null);
+  
+  // Rotation state
+  const [rotatingObject, setRotatingObject] = useState<string | null>(null);
+  
+  // Inline text editing state
+  const [editingLabel, setEditingLabel] = useState<string | null>(null);
 
   // Export modal states
   const [showExportModal, setShowExportModal] = useState(false);
@@ -96,10 +112,10 @@ export default function Draw() {
 
   const outline = useOutline();
   const objects = useObjects();
-  const labels = useLabels();
+  const labels  = useLabels();
 
   const selectedObject = objects.objects.find(o => o.id === objects.selectedId) ?? null;
-  const selectedLabel = labels.labels.find(l => l.id === labels.selectedId) ?? null;
+  const selectedLabel  = labels.labels.find(l => l.id === labels.selectedId)    ?? null;
 
   // Rotating resize cursor
   const resizeCursor = useMemo(() => {
@@ -114,27 +130,83 @@ export default function Draw() {
       if (outline.points.length === 0) return "Haz clic para empezar a trazar";
       return `${outline.points.length} vértice${outline.points.length > 1 ? "s" : ""} — sigue trazando`;
     }
-    if (phase === "objects") {
-      if (selectedObject && !selectedObject.fixed)
-        return `${selectedObject.label} seleccionado — arrastra o gira`;
-      return "Selecciona una forma del panel o haz clic en un elemento";
-    }
-    return "Añade etiquetas y arrástralas a su posición";
-  }, [phase, outline.closed, outline.points.length, selectedObject]);
+    // elements phase
+    if (selectedObject) return `${selectedObject.label} seleccionado — arrastra, gira o elimina`;
+    if (selectedLabel) return "Etiqueta seleccionada — edita el texto o muévela";
+    return "Añade formas, puertas, ventanas o texto al plano";
+  }, [phase, outline.closed, outline.points.length, selectedObject, selectedLabel]);
 
   // Phase navigation
   const handleNextPhase = useCallback(() => {
-    if (phase === "outline" && outline.closed) setPhase("objects");
-    else if (phase === "objects") setPhase("labels");
-    else if (phase === "labels") {
-      // Generate export preview
-      if (stageRef.current) {
-        const dataURL = stageRef.current.toDataURL({ pixelRatio: 3 });
-        setExportPreview(dataURL);
-        setShowExportModal(true);
-      }
+    if (phase === "outline" && outline.closed) {
+      setPhase("elements");
     }
   }, [phase, outline.closed]);
+
+  // Finish and export
+  const handleFinish = useCallback(() => {
+    if (stageRef.current) {
+      const dataURL = stageRef.current.toDataURL({ pixelRatio: 3 });
+      setExportPreview(dataURL);
+      setShowExportModal(true);
+    }
+  }, []);
+
+  // Drag & Drop handlers
+  const handleCanvasDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const stage = stageRef.current;
+    if (!stage || !draggingTool) return;
+
+    // Get canvas-relative position
+    const rect = stage.container().getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    if (draggingTool === "text") {
+      labels.placeLabel(x, y);
+    } else {
+      objects.placeObject(draggingTool, x, y);
+    }
+    setDraggingTool(null);
+  }, [draggingTool, labels, objects]);
+
+  const handleCanvasDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+  }, []);
+
+  // Rotation handlers
+  const handleRotateStart = useCallback((id: string) => {
+    setRotatingObject(id);
+    objects.setSelectedId(id);
+  }, [objects]);
+
+  const handleRotateMove = useCallback((p: { x: number; y: number }) => {
+    if (!rotatingObject) return;
+    const obj = objects.objects.find(o => o.id === rotatingObject);
+    if (!obj) return;
+
+    // Calculate angle from object center to mouse
+    const cx = obj.x + obj.width / 2;
+    const cy = obj.y + obj.height / 2;
+    const angle = Math.atan2(p.y - cy, p.x - cx) * (180 / Math.PI);
+    
+    // Adjust so 0° is pointing up
+    objects.setRotation(rotatingObject, angle + 90);
+  }, [rotatingObject, objects]);
+
+  const handleRotateEnd = useCallback(() => {
+    setRotatingObject(null);
+  }, []);
+
+  // Inline text editing handlers
+  const handleLabelDoubleClick = useCallback((id: string) => {
+    setEditingLabel(id);
+  }, []);
+
+  const handleLabelEditFinish = useCallback(() => {
+    setEditingLabel(null);
+  }, []);
 
   // Generate 3D from canvas
   const handleGenerate3D = async () => {
@@ -146,7 +218,7 @@ export default function Draw() {
     try {
       // Convert dataURL to Blob
       const blob = await (await fetch(exportPreview)).blob();
-
+      
       const formData = new FormData();
       formData.append("imagen", blob, "plano.png");
 
@@ -162,7 +234,7 @@ export default function Draw() {
       }
 
       const data = await response.json();
-
+      
       if (data.url) {
         setResult3D(data.url);
       } else if (data.base64) {
@@ -187,32 +259,51 @@ export default function Draw() {
 
   // Canvas events
   const handleMouseDown = useCallback((p: { x: number; y: number }) => {
-    if (phase === "outline") outline.addPoint(p.x, p.y);
-    else if (phase === "objects") objects.startDrag(p.x, p.y);
-    else if (phase === "labels") {
-      const hit = labels.startDrag(p.x, p.y);
-      if (!hit) labels.setSelectedId(null);
+    if (phase === "outline") {
+      outline.addPoint(p.x, p.y);
+    } else if (phase === "elements") {
+      // Try objects first, then labels
+      const objHit = objects.hitTest && objects.hitTest(p.x, p.y);
+      if (objHit) {
+        objects.startDrag(p.x, p.y);
+      } else {
+        const lblHit = labels.startDrag(p.x, p.y);
+        if (!lblHit) {
+          labels.setSelectedId(null);
+          objects.setSelectedId(null);
+        }
+      }
     }
   }, [phase, outline, objects, labels]);
 
   const handleMouseMove = useCallback((p: { x: number; y: number }) => {
     setMouseCoords(p);
+    
+    // Handle rotation if active
+    if (rotatingObject) {
+      handleRotateMove(p);
+      return;
+    }
+    
     if (phase === "outline") {
       outline.updatePreview(p.x, p.y);
       setHoverPt({ x: snap(p.x), y: snap(p.y) });
-    } else if (phase === "objects") {
+    } else if (phase === "elements") {
       objects.moveDrag(p.x, p.y);
+      labels.moveDrag(p.x, p.y);
       if (objects.isOnHandle(p.x, p.y)) {
         setCursor(resizeCursor);
       } else {
         setCursor("default");
       }
-    } else if (phase === "labels") {
-      labels.moveDrag(p.x, p.y);
     }
-  }, [phase, outline, objects, labels, resizeCursor]);
+  }, [phase, outline, objects, labels, resizeCursor, rotatingObject, handleRotateMove]);
 
-  const handleMouseUp = useCallback(() => { objects.endDrag(); labels.endDrag(); }, [objects, labels]);
+  const handleMouseUp    = useCallback(() => { 
+    objects.endDrag(); 
+    labels.endDrag(); 
+    handleRotateEnd();
+  }, [objects, labels, handleRotateEnd]);
   const handleMouseLeave = useCallback(() => {
     setHoverPt(null);
     objects.endDrag();
@@ -225,8 +316,10 @@ export default function Draw() {
       const active = document.activeElement;
       if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
       if (e.key !== "Delete" && e.key !== "Backspace") return;
-      if (phase === "objects" && objects.selectedId) objects.deleteObject(objects.selectedId);
-      if (phase === "labels" && labels.selectedId) labels.deleteLabel(labels.selectedId);
+      if (phase === "elements") {
+        if (objects.selectedId) objects.deleteObject(objects.selectedId);
+        else if (labels.selectedId) labels.deleteLabel(labels.selectedId);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -236,20 +329,15 @@ export default function Draw() {
 
   const stageCursor =
     phase === "outline" ? "crosshair" :
-      phase === "objects" ? cursor :
-        "default";
+    phase === "elements" ? cursor :
+    "default";
 
   // Grid lines
-  const vLines = Array.from({ length: Math.floor(canvasSize.width / GRID) + 1 }, (_, i) => i);
+  const vLines = Array.from({ length: Math.floor(canvasSize.width  / GRID) + 1 }, (_, i) => i);
   const hLines = Array.from({ length: Math.floor(canvasSize.height / GRID) + 1 }, (_, i) => i);
 
   // Coordinates in "meters" (1 cell = 0.5m)
   const toM = (px: number) => ((px / GRID) * 0.5).toFixed(1);
-
-  // If showing editor, render it
-  if (showEditor && result3D) {
-    return <Editor initialImageUrl={result3D} onBack={() => setShowEditor(false)} />;
-  }
 
   return (
     <div className="draw-page">
@@ -262,14 +350,10 @@ export default function Draw() {
         onUndo={outline.undoLastPoint}
         onReset={outline.reset}
         onNextPhase={handleNextPhase}
-        onAddObject={kind => objects.addObject(kind, canvasSize.width, canvasSize.height)}
-        onFixObject={objects.fixObject}
+        onStartDragTool={setDraggingTool}
         onDeleteObject={objects.deleteObject}
-        onSetRotation={objects.setRotation}
-        onAddLabel={() => labels.addLabel(canvasSize.width / 2 - 40, canvasSize.height / 2 - 10)}
-        onFixLabel={labels.fixLabel}
         onDeleteLabel={labels.deleteLabel}
-        onUpdateLabelText={labels.updateText}
+        onFinish={handleFinish}
       />
 
       <main className="canvas-area">
@@ -285,7 +369,11 @@ export default function Draw() {
         </div>
 
         <div className="canvas-wrapper">
-          <div className="canvas-inner">
+          <div 
+            className="canvas-inner"
+            onDrop={handleCanvasDrop}
+            onDragOver={handleCanvasDragOver}
+          >
             {canvasSize.width > 0 && (
               <Stage
                 ref={stageRef}
@@ -362,25 +450,62 @@ export default function Draw() {
                   )}
 
                   {/* Placed objects */}
-                  {(phase === "objects" || phase === "labels") && objects.objects.map(obj => (
+                  {phase === "elements" && objects.objects.map(obj => (
                     <ObjectSymbol
                       key={obj.id} obj={obj}
-                      isSelected={obj.id === objects.selectedId && phase === "objects"}
-                      onSelect={() => { if (phase === "objects" && !obj.fixed) objects.setSelectedId(obj.id); }}
+                      isSelected={obj.id === objects.selectedId}
+                      onSelect={() => {
+                        objects.setSelectedId(obj.id);
+                        labels.setSelectedId(null);
+                      }}
+                      onRotateStart={handleRotateStart}
                     />
                   ))}
 
                   {/* Text labels */}
-                  {phase === "labels" && labels.labels.map(lb => (
+                  {phase === "elements" && labels.labels.map(lb => (
                     <CanvasLabel
                       key={lb.id} lb={lb}
                       isSelected={lb.id === labels.selectedId}
-                      onSelect={() => labels.setSelectedId(lb.id)}
+                      onSelect={() => {
+                        labels.setSelectedId(lb.id);
+                        objects.setSelectedId(null);
+                      }}
+                      onDoubleClick={() => handleLabelDoubleClick(lb.id)}
                     />
                   ))}
                 </Layer>
               </Stage>
             )}
+
+            {/* Inline text editor */}
+            {editingLabel && (() => {
+              const lb = labels.labels.find(l => l.id === editingLabel);
+              if (!lb) return null;
+              
+              return (
+                <input
+                  type="text"
+                  className="inline-text-editor"
+                  style={{
+                    position: 'absolute',
+                    left: lb.x,
+                    top: lb.y,
+                    width: Math.max(100, lb.text.length * 8 + 20),
+                    height: 24,
+                  }}
+                  value={lb.text}
+                  onChange={e => labels.updateText(editingLabel, e.target.value)}
+                  onBlur={handleLabelEditFinish}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === 'Escape') {
+                      handleLabelEditFinish();
+                    }
+                  }}
+                  autoFocus
+                />
+              );
+            })()}
           </div>
         </div>
       </main>
@@ -390,14 +515,14 @@ export default function Draw() {
         <div className="export-modal-overlay" onClick={handleCloseModal}>
           <div className="export-modal" onClick={(e) => e.stopPropagation()}>
             <button className="export-modal-close" onClick={handleCloseModal}>✕</button>
-
+            
             {!result3D ? (
               <>
                 <h2 className="export-modal-title">🎉 Plano completado</h2>
                 <p className="export-modal-subtitle">
                   Tu plano está listo. Genera una vista 3D equirectangular ahora.
                 </p>
-
+                
                 {exportPreview && (
                   <img src={exportPreview} alt="Preview" className="export-preview" />
                 )}

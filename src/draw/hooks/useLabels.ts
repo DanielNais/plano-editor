@@ -13,7 +13,19 @@ export function useLabels() {
       text: "Etiqueta",
       x,
       y,
-      fixed: false,
+    };
+    setLabels((prev) => [...prev, lb]);
+    setSelectedId(lb.id);
+    return lb.id;
+  }, []);
+
+  // Place label at specific position (for drag & drop)
+  const placeLabel = useCallback((x: number, y: number) => {
+    const lb: LabelBox = {
+      id: uuid(),
+      text: "Texto",
+      x: x - 40,
+      y: y - 10,
     };
     setLabels((prev) => [...prev, lb]);
     setSelectedId(lb.id);
@@ -22,11 +34,6 @@ export function useLabels() {
 
   const updateText = useCallback((id: string, text: string) => {
     setLabels((prev) => prev.map((l) => (l.id === id ? { ...l, text } : l)));
-  }, []);
-
-  const fixLabel = useCallback((id: string) => {
-    setLabels((prev) => prev.map((l) => (l.id === id ? { ...l, fixed: true } : l)));
-    setSelectedId(null);
   }, []);
 
   const deleteLabel = useCallback((id: string) => {
@@ -39,7 +46,6 @@ export function useLabels() {
       const W = 160, H = 40;
       for (let i = labels.length - 1; i >= 0; i--) {
         const l = labels[i];
-        if (l.fixed) continue;
         if (px >= l.x && px <= l.x + W && py >= l.y && py <= l.y + H) {
           return l.id;
         }
@@ -80,8 +86,8 @@ export function useLabels() {
     selectedId,
     setSelectedId,
     addLabel,
+    placeLabel,
     updateText,
-    fixLabel,
     deleteLabel,
     startDrag,
     moveDrag,

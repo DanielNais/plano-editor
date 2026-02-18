@@ -2,15 +2,17 @@ import { Group, Rect, Circle, Line, Arc } from "react-konva";
 import type { PlacedObject } from "../types";
 
 const HANDLE = 12;
+const ROTATE_HANDLE_OFFSET = 40;
 
 type Props = {
   obj:        PlacedObject;
   isSelected: boolean;
   onSelect:   () => void;
+  onRotateStart?: (id: string) => void;
 };
 
-export function ObjectSymbol({ obj, isSelected, onSelect }: Props) {
-  const { kind, x, y, width: w, height: h, rotation, fixed } = obj;
+export function ObjectSymbol({ obj, isSelected, onSelect, onRotateStart }: Props) {
+  const { kind, x, y, width: w, height: h, rotation } = obj;
   const stroke = "#1a1a1a";
   const sw     = 2;
   const sel    = isSelected ? { shadowColor: "#2980b9", shadowBlur: 9, shadowOpacity: 0.65 } : {};
@@ -24,7 +26,6 @@ export function ObjectSymbol({ obj, isSelected, onSelect }: Props) {
       offsetY={h / 2}
       onClick={onSelect}
       onTap={onSelect}
-      opacity={fixed ? 0.85 : 1}
     >
       {/* ── rect ── */}
       {kind === "rect" && (
@@ -70,26 +71,54 @@ export function ObjectSymbol({ obj, isSelected, onSelect }: Props) {
       )}
 
       {/* ── Selection dashed border ── */}
-      {isSelected && !fixed && (
+      {isSelected && (
         <Rect x={-5} y={-5} width={w + 10} height={h + 10}
           stroke="#2980b9" strokeWidth={1.5} dash={[6, 3]} fill="transparent"
         />
       )}
 
-      {/* ── Resize handle (bottom-right) — square only, NO badge ── */}
-      {isSelected && !fixed && (
+      {/* ── Resize handle (bottom-right) ── */}
+      {isSelected && (
         <Group x={w} y={h}>
           <Rect
             x={-HANDLE / 2} y={-HANDLE / 2}
             width={HANDLE} height={HANDLE}
             fill="#2980b9" stroke="#fff" strokeWidth={1.5} cornerRadius={2}
           />
-          {/* tiny ↘ arrows */}
           <Line points={[-3, 2, 2, 2, 2, -3]} stroke="#fff" strokeWidth={1.5} />
         </Group>
       )}
 
-      {/* NO lock badge — nothing rendered when fixed */}
+      {/* ── Rotation handle (top center) ── */}
+      {isSelected && (
+        <Group
+          x={w / 2}
+          y={-ROTATE_HANDLE_OFFSET}
+          onMouseDown={(e) => {
+            e.cancelBubble = true;
+            if (onRotateStart) onRotateStart(obj.id);
+          }}
+          onTap={(e) => {
+            e.cancelBubble = true;
+            if (onRotateStart) onRotateStart(obj.id);
+          }}
+        >
+          {/* Line connecting to object */}
+          <Line points={[0, 0, 0, ROTATE_HANDLE_OFFSET - 5]} stroke="#2980b9" strokeWidth={1} dash={[3, 2]} />
+          
+          {/* Circular handle */}
+          <Circle
+            radius={10}
+            fill="#fff"
+            stroke="#2980b9"
+            strokeWidth={2}
+            shadowColor="rgba(0,0,0,0.2)"
+            shadowBlur={4}
+            shadowOffsetY={2}
+          />
+          <Line points={[-4, 0, 4, 0, 0, -4, 0, 4]} stroke="#2980b9" strokeWidth={1.5} />
+        </Group>
+      )}
     </Group>
   );
 }

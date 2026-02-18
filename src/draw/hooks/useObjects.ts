@@ -48,17 +48,27 @@ export function useObjects() {
       x: Math.round((cW / 2 - d.w / 2) / 10) * 10,
       y: Math.round((cH / 2 - d.h / 2) / 10) * 10,
       width: d.w, height: d.h,
-      rotation: 0, fixed: false,
+      rotation: 0,
+    };
+    setObjects(prev => [...prev, obj]);
+    setSelectedId(obj.id);
+  }, []);
+
+  // Place object at specific position (for drag & drop)
+  const placeObject = useCallback((kind: ObjectKind, x: number, y: number) => {
+    const d = DEFAULTS[kind];
+    const obj: PlacedObject = {
+      id: uuid(), kind, label: d.label,
+      x: Math.round((x - d.w / 2) / 10) * 10,
+      y: Math.round((y - d.h / 2) / 10) * 10,
+      width: d.w, height: d.h,
+      rotation: 0,
     };
     setObjects(prev => [...prev, obj]);
     setSelectedId(obj.id);
   }, []);
 
   // ── Fix / Delete ──────────────────────────────────────────────────────────
-  const fixObject = useCallback((id: string) => {
-    setObjects(prev => prev.map(o => o.id === id ? { ...o, fixed: true } : o));
-    setSelectedId(null);
-  }, []);
 
   const deleteObject = useCallback((id: string) => {
     setObjects(prev => prev.filter(o => o.id !== id));
@@ -75,7 +85,6 @@ export function useObjects() {
   const hitTest = useCallback((px: number, py: number): { id: string; mode: InteractMode } | null => {
     for (let i = objects.length - 1; i >= 0; i--) {
       const o = objects[i];
-      if (o.fixed) continue;
 
       const cx = o.x + o.width  / 2;
       const cy = o.y + o.height / 2;
@@ -157,7 +166,7 @@ export function useObjects() {
   // ── Cursor hint: is pointer over resize handle? ───────────────────────────
   const isOnHandle = useCallback((px: number, py: number): boolean => {
     const o = objects.find(obj => obj.id === selectedId);
-    if (!o || o.fixed) return false;
+    if (!o) return false;
 
     const cx  = o.x + o.width  / 2;
     const cy  = o.y + o.height / 2;
@@ -173,7 +182,7 @@ export function useObjects() {
 
   return {
     objects, selectedId, setSelectedId,
-    addObject, fixObject, deleteObject, setRotation,
-    startDrag, moveDrag, endDrag, isOnHandle,
+    addObject, placeObject, deleteObject, setRotation,
+    startDrag, moveDrag, endDrag, isOnHandle, hitTest,
   };
 }

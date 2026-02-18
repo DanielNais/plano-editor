@@ -1,4 +1,4 @@
-export type Phase = "outline" | "objects" | "labels";
+export type Phase = "outline" | "elements";
 
 export type OutlinePoint = { x: number; y: number };
 export type OutlineLine  = { id: string; x1: number; y1: number; x2: number; y2: number };
@@ -14,7 +14,6 @@ export type PlacedObject = {
   width:    number;
   height:   number;
   rotation: number;   // degrees
-  fixed:    boolean;
 };
 
 export type LabelBox = {
@@ -22,5 +21,4 @@ export type LabelBox = {
   text:  string;
   x:     number;
   y:     number;
-  fixed: boolean;
 };

@@ -1,58 +1,71 @@
 import type { Phase, ObjectKind, PlacedObject, LabelBox } from "../types";
 
 type Props = {
-  phase:             Phase;
-  outlineClosed:     boolean;
+  phase: Phase;
+  outlineClosed: boolean;
   outlinePointCount: number;
-  selectedObject:    PlacedObject | null;
-  selectedLabel:     LabelBox | null;
-  onUndo:            () => void;
-  onReset:           () => void;
-  onNextPhase:       () => void;
-  onAddObject:       (kind: ObjectKind) => void;
-  onFixObject:       (id: string) => void;
-  onDeleteObject:    (id: string) => void;
-  onSetRotation:     (id: string, deg: number) => void;
-  onAddLabel:        () => void;
-  onFixLabel:        (id: string) => void;
-  onDeleteLabel:     (id: string) => void;
-  onUpdateLabelText: (id: string, text: string) => void;
+  selectedObject: PlacedObject | null;
+  selectedLabel: LabelBox | null;
+  onUndo: () => void;
+  onReset: () => void;
+  onNextPhase: () => void;
+  onStartDragTool: (kind: ObjectKind | "text") => void;
+  onDeleteObject: (id: string) => void;
+  onDeleteLabel: (id: string) => void;
+  onFinish: () => void;
 };
 
 const SHAPES: { kind: ObjectKind; icon: string; label: string }[] = [
-  { kind: "rect",   icon: "□",  label: "Rectángulo" },
-  { kind: "circle", icon: "◯",  label: "Círculo"    },
-  { kind: "line",   icon: "—",  label: "Línea"      },
-  { kind: "door",   icon: "⌒",  label: "Puerta"     },
-  { kind: "window", icon: "⊟",  label: "Ventana"    },
+  { kind: "rect", icon: "□", label: "Rectángulo" },
+  { kind: "circle", icon: "◯", label: "Círculo" },
+  { kind: "line", icon: "—", label: "Línea" },
+  { kind: "door", icon: "⌒", label: "Puerta" },
+  { kind: "window", icon: "⊟", label: "Ventana" },
 ];
 
 const PHASE_STEPS: { key: Phase; label: string; short: string }[] = [
-  { key: "outline", label: "Contorno",  short: "01" },
-  { key: "objects", label: "Elementos", short: "02" },
-  { key: "labels",  label: "Texto",     short: "03" },
+  { key: "outline", label: "Contorno", short: "01" },
+  { key: "elements", label: "Elementos", short: "02" },
 ];
 
 const PHASE_HINTS: Record<Phase, string> = {
   outline: "Clic en la cuadrícula para añadir vértices. Cierra la forma sobre el primer punto.",
-  objects: "Arrastra para mover. Esquina ↘ para redimensionar. Gira con el slider.",
-  labels:  "Añade etiquetas de texto y arrástralas a su posición.",
+  elements: "Arrastra formas y texto al canvas. Doble clic en texto para editar.",
 };
 
-const ORDER: Record<Phase, number> = { outline: 0, objects: 1, labels: 2 };
+const ORDER: Record<Phase, number> = { outline: 0, elements: 1 };
 
 export default function LeftSidebar({
   phase, outlineClosed, outlinePointCount,
   selectedObject, selectedLabel,
   onUndo, onReset, onNextPhase,
-  onAddObject, onFixObject, onDeleteObject, onSetRotation,
-  onAddLabel, onFixLabel, onDeleteLabel, onUpdateLabelText,
+  onStartDragTool, onDeleteObject,
+  onDeleteLabel,
+  onFinish,
 }: Props) {
 
-  const nextEnabled =
-    (phase === "outline" && outlineClosed) ||
-    phase === "objects" ||
-    phase === "labels";
+  const nextEnabled = phase === "outline" ? outlineClosed : false;
+
+  const handleDragStart = (e: React.DragEvent, kind: ObjectKind | "text") => {
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("tool", kind);
+    const dragIcon = e.currentTarget.querySelector('.tool-icon');
+    if (dragIcon) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 40;
+      canvas.height = 40;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.font = '24px monospace';
+        ctx.fillStyle = '#3b82f6';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(dragIcon.textContent || '', 20, 20);
+        e.dataTransfer.setDragImage(canvas, 20, 20);
+      }
+    }
+    onStartDragTool(kind);
+  };
 
   return (
     <aside className="sidebar" style={{ width: 220 }}>
@@ -73,7 +86,7 @@ export default function LeftSidebar({
             <div key={s.key} className="phase-pip" style={{
               background:
                 phase === s.key ? 'var(--accent)' :
-                ORDER[phase] > ORDER[s.key] ? 'var(--border2)' : 'var(--text-faint)',
+                  ORDER[phase] > ORDER[s.key] ? 'var(--border2)' : 'var(--text-faint)',
               opacity: phase === s.key ? 1 : ORDER[phase] > ORDER[s.key] ? 0.5 : 0.2,
             }} />
           ))}
@@ -87,7 +100,7 @@ export default function LeftSidebar({
       {/* ── Body ── */}
       <div className="sidebar-body">
 
-        {/* ─── PHASE 1 ─── */}
+        {/* ─── PHASE 1: OUTLINE ─── */}
         {phase === "outline" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span className="section-label" style={{ marginTop: 4 }}>Edición</span>
@@ -126,21 +139,42 @@ export default function LeftSidebar({
           </div>
         )}
 
-        {/* ─── PHASE 2 ─── */}
-        {phase === "objects" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="section-label" style={{ marginTop: 4 }}>Formas</span>
-            <div className="tool-list">
-              {SHAPES.map(s => (
-                <button key={s.kind} className="tool-btn" onClick={() => onAddObject(s.kind)}>
-                  <span className="tool-icon">{s.icon}</span>
-                  <span className="tool-label">{s.label}</span>
-                </button>
-              ))}
+        {/* ─── PHASE 2: ELEMENTS (formas + texto fusionados) ─── */}
+        {phase === "elements" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Formas - draggable */}
+            <div>
+              <span className="section-label">Formas</span>
+              <div className="tool-list">
+                {SHAPES.map(s => (
+                  <div
+                    key={s.kind}
+                    className="tool-btn draggable"
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, s.kind)}
+                  >
+                    <span className="tool-icon">{s.icon}</span>
+                    <span className="tool-label">{s.label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {/* Inspector */}
-            {selectedObject && !selectedObject.fixed && (
+            {/* Texto - draggable */}
+            <div>
+              <span className="section-label">Texto</span>
+              <div
+                className="tool-btn draggable"
+                draggable
+                onDragStart={(e) => handleDragStart(e, "text")}
+              >
+                <span className="tool-icon" style={{ fontFamily: "serif", fontStyle: "italic" }}>Aa</span>
+                <span className="tool-label">Añadir texto</span>
+              </div>
+            </div>
+
+            {/* Inspector: Objeto seleccionado */}
+            {selectedObject && (
               <div className="inspector-card">
                 <div>
                   <div className="inspector-label">{selectedObject.label}</div>
@@ -149,57 +183,16 @@ export default function LeftSidebar({
                   </div>
                 </div>
 
-                {/* Rotation */}
-                <div>
-                  <div className="rotation-row" style={{ marginBottom: 6 }}>
-                    <span className="rotation-label">↻ Rotación</span>
-                    <span className="rotation-value">{Math.round(selectedObject.rotation)}°</span>
-                  </div>
-                  <input
-                    type="range" min={0} max={359} step={1}
-                    value={selectedObject.rotation}
-                    onChange={e => onSetRotation(selectedObject.id, Number(e.target.value))}
-                  />
-                </div>
-
-                <button className="action-btn primary" onClick={() => onFixObject(selectedObject.id)}>
-                  ✓ Aplicar y fijar
-                </button>
                 <button className="action-btn danger" onClick={() => onDeleteObject(selectedObject.id)}>
                   <span>✕</span> Eliminar
                 </button>
               </div>
             )}
 
-            {selectedObject?.fixed && (
-              <div className="fixed-badge">Elemento fijado</div>
-            )}
-          </div>
-        )}
-
-        {/* ─── PHASE 3 ─── */}
-        {phase === "labels" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="section-label" style={{ marginTop: 4 }}>Etiquetas</span>
-            <button className="tool-btn" onClick={onAddLabel}>
-              <span className="tool-icon" style={{ fontFamily: "serif", fontStyle: "italic" }}>Aa</span>
-              <span className="tool-label">Añadir texto</span>
-            </button>
-
-            {selectedLabel && !selectedLabel.fixed && (
+            {/* Inspector: Etiqueta seleccionada */}
+            {selectedLabel && (
               <div className="inspector-card">
-                <div className="inspector-label">Editar</div>
-                <input
-                  type="text"
-                  className="text-input"
-                  value={selectedLabel.text}
-                  onChange={e => onUpdateLabelText(selectedLabel.id, e.target.value)}
-                  autoFocus
-                  placeholder="Mesa, Cocina, Dormitorio…"
-                />
-                <button className="action-btn primary" onClick={() => onFixLabel(selectedLabel.id)}>
-                  ✓ Fijar
-                </button>
+                <div className="inspector-label">Texto seleccionado</div>
                 <button className="action-btn danger" onClick={() => onDeleteLabel(selectedLabel.id)}>
                   <span>✕</span> Eliminar
                 </button>
@@ -209,15 +202,24 @@ export default function LeftSidebar({
         )}
       </div>
 
-      {/* ── Footer: next/finish ── */}
+      {/* ── Footer ── */}
       <div className="sidebar-footer">
-        <button
-          className="action-btn primary"
-          disabled={!nextEnabled}
-          onClick={onNextPhase}
-        >
-          {phase === "labels" ? "Finalizar  ✓" : "Siguiente  →"}
-        </button>
+        {phase === "outline" ? (
+          <button
+            className="action-btn primary"
+            disabled={!nextEnabled}
+            onClick={onNextPhase}
+          >
+            Siguiente  →
+          </button>
+        ) : (
+          <button
+            className="action-btn primary"
+            onClick={onFinish}
+          >
+            Finalizar y generar 3D ✓
+          </button>
+        )}
       </div>
     </aside>
   );
