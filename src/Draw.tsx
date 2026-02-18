@@ -7,6 +7,7 @@ import { useObjects } from "./draw/hooks/useObjects";
 import { useLabels } from "./draw/hooks/useLabels";
 import { ObjectSymbol } from "./draw/components/ObjectSymbol";
 import LeftSidebar from "./draw/components/LeftSidebar";
+import Editor from "./Editor";
 import "./styles/draw.css";
 
 const GRID = 40;
@@ -91,6 +92,7 @@ export default function Draw() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [result3D, setResult3D] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showEditor, setShowEditor] = useState(false);
 
   const outline = useOutline();
   const objects = useObjects();
@@ -148,7 +150,9 @@ export default function Draw() {
       const formData = new FormData();
       formData.append("imagen", blob, "plano.png");
 
-      const response = await fetch("/api/generar.php", {
+      // Para desarrollo local usa localhost:8000
+      // En producción cambia a "/api/generar.php"
+      const response = await fetch("http://localhost:8000/generar.php", {
         method: "POST",
         body: formData,
       });
@@ -178,6 +182,7 @@ export default function Draw() {
     setExportPreview(null);
     setResult3D(null);
     setError(null);
+    setShowEditor(false);
   };
 
   // Canvas events
@@ -240,6 +245,11 @@ export default function Draw() {
 
   // Coordinates in "meters" (1 cell = 0.5m)
   const toM = (px: number) => ((px / GRID) * 0.5).toFixed(1);
+
+  // If showing editor, render it
+  if (showEditor && result3D) {
+    return <Editor initialImageUrl={result3D} onBack={() => setShowEditor(false)} />;
+  }
 
   return (
     <div className="draw-page">
@@ -423,8 +433,11 @@ export default function Draw() {
                 <h2 className="export-modal-title">✨ Vista 3D generada</h2>
                 <img src={result3D} alt="Resultado 3D" className="export-result" />
                 <div className="export-actions">
-                  <a href={result3D} download="plano-3d.jpg" className="btn-primary">
-                    ⬇ Descargar vista 3D
+                  <button onClick={() => setShowEditor(true)} className="btn-primary">
+                    ✏️ Editar en 3D
+                  </button>
+                  <a href={result3D} download="plano-3d.jpg" className="btn-secondary">
+                    ⬇ Descargar
                   </a>
                   <button className="btn-secondary" onClick={handleCloseModal}>
                     Cerrar
